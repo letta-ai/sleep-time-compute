@@ -2,13 +2,7 @@
 Code and data accompanying the paper "Sleep-time Compute: Beyond Inference Scaling at Test-time" 
 
 ## Data
-First, download the data from huggingface:
-```bash
-
-```
-
-
-
+Stateful GSM-Symbolic: https://huggingface.co/datasets/letta-ai/stateful-gsm-symbolic
 
 
 ## Setup
