@@ -47,16 +47,17 @@ def rethink_memory(agent_state: "AgentState", new_memory: str, target_block_labe
         agent_state.memory.update_block_value(label=target_block_label, value=new_memory)
     return None
 
-
-LLM_CONFIG = LlmConfig(model="gpt-4o-mini", model_endpoint_type="openai", model_endpoint="https://api.openai.com/v1", context_window=32_000)
+def get_prompt_text(filename: str, block: str) -> str:
+    with open(f"prompts/{block}/{filename}.txt", "r") as f:
+        return f.read()
 
 async def run_memory_edits(
     input_file: str,
     output_file: str,
-    human_block_filename: str = "human_accurate",
-    persona_block_filename: str = "persona_verbose",
-    system_block_filename: str = "convo_base",
-    sleep_time_system_block_filename: str = "offline_base",
+    human_block_filename: str = "human_verbosity_0",
+    persona_block_filename: str = "persona_verbosity_0",
+    system_block_filename: str = "convo_verbosity_0",
+    sleep_time_system_block_filename: str = "sleep_time_base",
     sleep_time_memory_model: Optional[str] = None,
     conversation_model: Optional[str] = None,
     max_memory_rethinks: int = 4,
@@ -67,22 +68,10 @@ async def run_memory_edits(
     ablate_question: bool = False,
     cached_sleep_time_blocks_file: Optional[str] = None,
 ) -> None:
-    '''
-    if sleep_time_memory_model is None:
-        sleep_time_openai_config = OPENAI_CONFIG
-    else:
-        sleep_time_openai_config = LLMConfig.default_config(offline_memory_model)
 
-    if conversation_model is None:
-        conversation_openai_config = OPENAI_CONFIG
-    else:
-        conversation_openai_config = LLMConfig.default_config(conversation_model)
-    '''
-    client = Letta()
-    # rethink_memory_tool = client.create_or_update_tool(rethink_memory)
-    # finish_rethinking_memory_tool = client.create_or_update_tool(finish_rethinking_memory)
-    # rethink_memory_tool = client.tools.upsert_from_function(func=rethink_memory)
-    #finish_rethinking_memory_tool = client.tools.upsert_from_function(func=finish_rethinking_memory)
+    conversation_llm_config = LlmConfig(model=conversation_model, model_endpoint_type="openai", model_endpoint="https://api.openai.com/v1", context_window=32_000)
+    sleep_time_llm_config = LlmConfig(model=sleep_time_memory_model, model_endpoint_type="openai", model_endpoint="https://api.openai.com/v1", context_window=32_000)
+
     with jsonlines.open(input_file) as reader:
         examples = list(reader)
     progress = tqdm(total=len(examples))
@@ -98,37 +87,23 @@ async def run_memory_edits(
                 if num_convo_agents == num_sleep_time_agents:
                     # human_block = client.blocks.create(label="human", value=get_human_text(human_block_filename), limit=2000)
                     #persona_block = client.blocks.create(label="persona", value=get_persona_text(persona_block_filename), limit=2000)
-                    human_block = client.blocks.create(label="human", value="", limit=2000)
-                    persona_block = client.blocks.create(label="persona", value="", limit=2000)
-
+                    # read from a txt file in prompts/human/{human_block_filename}.txt
                     conversation_agent = client.agents.create(
                         name=f"{example_idx}_conversation_agent_{idx}",
                         # agent_type=AgentType.memgpt_agent,
-                        # system=get_system_text(system_block_filename),
-                        llm_config=LLM_CONFIG,
+                        system=get_prompt_text(system_block_filename, "system"),
+                        llm_config=conversation_llm_config,
                         embedding="openai/text-embedding-ada-002",
-                        # tool_ids=[send_message.id],
-                        #tool_ids=["send_message"],
                         tools=["send_message"],
-                        memory_blocks=[{"label": "human", "value": ""}, {"label": "persona", "value": ""}], # TODO add in the prompts
+                        memory_blocks=[
+                            {"label": "human", "value": get_prompt_text(human_block_filename, "human")}, 
+                            {"label": "persona", "value": get_prompt_text(persona_block_filename, "persona")}],
                         block_ids=[new_memory.id],
                         include_base_tools=False,
                         initial_message_sequence=[],
                     )
                     conversation_agents.append(conversation_agent)
 
-                sleep_time_human_block = client.blocks.create(
-                    label="human",
-                    value="I am a valuable source of information, I give problems that are worth thinking about deeply and carefully.",
-                    limit=2000,
-                )
-                sleep_time_persona_block = client.blocks.create(
-                    label="persona",
-                    value="""I am an expert reasoning agent. When given a new context, I make calculations and inferences that can be useful for future questions like the ones in the `examples` block.
-                I use the rethink memory to store all my questions, calcuations, and inferences. I am verbose and brainstorm using the rethink block many different types of potential questions and the reasoning required for answering them. I keep calling rethink_memory until I have all the potential inferences and calcuations, and check that there are no errors or extra information that would not be helpful for answering the kinds of questions in the `examples` block.
-                """,
-                    limit=2000,
-                )
 
                 rethink_tool = client.tools.upsert_from_function(func=rethink_memory)
                 finish_rethink_tool = client.tools.upsert_from_function(func=finish_rethinking_memory)
@@ -136,14 +111,16 @@ async def run_memory_edits(
                 sleep_time_memory_agent = client.agents.create(
                     name=f"{example_idx}_sleep_time_memory_agent_{idx}",
                     agent_type="offline_memory_agent",
-                    #system=get_system_text(sleep_time_system_block_filename),
-                    memory_blocks=[{"label": "human", "value": ""}, {"label": "persona", "value": ""}],
+                    system=get_prompt_text(sleep_time_system_block_filename, "system"),
+                    memory_blocks=[
+                        {"label": "human", "value": "I am a valuable source of information, I give problems that are worth thinking about deeply and carefully."},
+                        {"label": "persona", "value": """I am an expert reasoning agent. When given a new context, I make calculations and inferences that can be useful for future questions like the ones in the `examples` block.
+                I use the rethink memory to store all my questions, calcuations, and inferences. I am verbose and brainstorm using the rethink block many different types of potential questions and the reasoning required for answering them. I keep calling rethink_memory until I have all the potential inferences and calcuations, and check that there are no errors or extra information that would not be helpful for answering the kinds of questions in the `examples` block."""}
+                    ],
                     block_ids=[new_memory.id],
-                    llm_config=LLM_CONFIG,
+                    llm_config=sleep_time_llm_config,
                     embedding="openai/text-embedding-ada-002",
                     tool_ids=[rethink_tool.id, finish_rethink_tool.id],
-                    # tools = ["rethink_memory", "finish_rethinking_memory"],
-                    # tool_rules=[InitToolRule(tool_name=rethink_memory_tool.name)],
                     include_base_tools=False,
                     initial_message_sequence=[],
                 )
@@ -251,10 +228,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_file", type=str, default="./GSM8K_p2.jsonl", required=False)
     parser.add_argument("--output_file", default="./predictions-GSM8k_p2.jsonl", required=False)
-    parser.add_argument("--human_block_filename", default="human_accurate", required=False)
-    parser.add_argument("--persona_block_filename", default="persona_verbose", required=False)
-    parser.add_argument("--system_block_filename", default="convo_base", required=False)
-    parser.add_argument("--sleep_time_system_block_filename", default="offline_base", required=False)
+    parser.add_argument("--human_block_filename", default="human_verbosity_0", required=False)
+    parser.add_argument("--persona_block_filename", default="persona_verbosity_0", required=False)
+    parser.add_argument("--system_block_filename", default="convo_verbosity_0", required=False)
+    parser.add_argument("--sleep_time_system_block_filename", default="sleep_time_base", required=False)
     parser.add_argument("--sleep_time_memory_model", default="gpt-4o-mini", required=False)
     parser.add_argument("--conversation_model", default="gpt-4o-mini", required=False)
     parser.add_argument("--max_memory_rethinks", default=None, required=False, type=int)
