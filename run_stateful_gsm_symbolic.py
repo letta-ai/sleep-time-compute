@@ -81,7 +81,6 @@ async def run_memory_edits(
     #finish_rethinking_memory_tool = client.tools.upsert_from_function(func=finish_rethinking_memory)
     with jsonlines.open(input_file) as reader:
         examples = list(reader)
-
     progress = tqdm(total=len(examples))
 
     def process_example(example_idx, example):
@@ -203,10 +202,10 @@ async def run_memory_edits(
             
             result = {
                 "question": example["question"],
-                "responses": [final_response.model_dump() for final_response in final_responses],  # "final_response.model_dump(),
+                "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
                 "sleep_time_memory": [
                     # sleep_time_memory_agent.memory.get_block("rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
-                    client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block") for sleep_time_memory_agent in sleep_time_memory_agents
+                    client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
                 ],
                 "conversation_memory": [
                     (
@@ -217,7 +216,7 @@ async def run_memory_edits(
                     for conversation_agent in conversation_agents
                 ],
                 "answer": example["answer"],
-                "sleep_time_responses": [sleep_time_response.model_dump() for sleep_time_response in sleep_time_responses],
+                "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
             } 
         except Exception as e:
             print(f"Error processing example: {example}")
@@ -239,7 +238,7 @@ async def run_memory_edits(
     with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
         results = await asyncio.gather(*[process_example_async(sem, pool, idx, example) for idx, example in enumerate(examples)])
 
-    with jsonlines.open(output_file, mode) as writer:
+    with jsonlines.open(output_file, mode="w") as writer:
         for result in tqdm(results):
             if result is not None:
                 writer.write(result)
