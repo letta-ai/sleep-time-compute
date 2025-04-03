@@ -16,6 +16,10 @@ from tqdm import tqdm
 
 from letta_client import Letta, LlmConfig, MessageCreate
 
+import logging
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
 def finish_rethinking_memory(agent_state: "AgentState") -> Optional[str]:  # type: ignore
     """
     This function is called when the agent is done rethinking the context. Do not call this unless all possible useful inferences are made.
@@ -172,9 +176,8 @@ async def run_memory_edits(
                     )
                     for idx, sleep_time_agent in enumerate(sleep_time_memory_agents)
                 ]
-                for future in tqdm(as_completed(futures), total=len(sleep_time_memory_agents)):
+                for future in as_completed(futures):
                     idx, response, updated_agent = future.result()
-                    print("RESPONSE", response)
                     sleep_time_responses.append(response)
                     sleep_time_memory_agents[idx] = updated_agent
             # Process conversation agents in parallel
@@ -195,7 +198,7 @@ async def run_memory_edits(
                     )
                     for idx, conversation_agent in enumerate(conversation_agents)
                 ]
-                for future in tqdm(as_completed(futures), total=len(conversation_agents)):
+                for future in as_completed(futures):
                     idx, response, updated_agent = future.result()
                     final_responses.append(response)
                     conversation_agents[idx] = updated_agent
@@ -219,9 +222,9 @@ async def run_memory_edits(
                 "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
             } 
         except Exception as e:
-            print(f"Error processing example: {example}")
-            print(e)
-            result = None
+            logging.error(f"Error processing example: {example}")
+            logging.error(e)
+            result = {"error": str(e)}
 
         progress.update(1)
         return result
