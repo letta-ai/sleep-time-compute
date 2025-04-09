@@ -48,9 +48,10 @@ def rethink_memory(agent_state: "AgentState", new_memory: str, target_block_labe
 
 
 LLM_CONFIG = LlmConfig(
-    model="o3-mini",
-    model_endpoint_type="openai",
-    model_endpoint="https://api.openai.com/v1",
+    model="claude-3-7-sonnet-20250219",
+    #model="gpt-4o-mini",
+    model_endpoint_type="anthropic",
+    model_endpoint="https://api.anthropic.com/v1",
     context_window=200_000,
 )
 
@@ -148,7 +149,7 @@ async def run_memory_edits(
 
                 sleep_time_memory_agent = client.agents.create(
                     name=f"{example_idx}_sleep_time_memory_agent_{idx}_{run_uuid}",
-                    agent_type="offline_memory_agent",
+                    agent_type="sleeptime_agent",
                     system=get_prompt_text(sleep_time_system_block_filename, "system"),
                     memory_blocks=[
                         {"label": "human", "value": "I am a valuable source of information, I give problems that are worth thinking about deeply and carefully."},
@@ -222,7 +223,7 @@ async def run_memory_edits(
                     conversation_agents[idx] = updated_agent
             
             result = {
-                "question": example["question"],
+                "question": example["stateful_aime_question"],
                 "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
                 "sleep_time_memory": [
                     # sleep_time_memory_agent.memory.get_block("rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
