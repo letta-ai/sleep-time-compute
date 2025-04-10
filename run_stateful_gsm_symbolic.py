@@ -57,15 +57,12 @@ async def run_memory_edits(
     test_time_human_block_filename: str = "human_verbosity_0",
     test_time_persona_block_filename: str = "persona_verbosity_0",
     test_time_system_block_filename: str = "convo_verbosity_0",
-    sleep_time_human_block_filename: str = "human_verbosity_0",
-    sleep_time_persona_block_filename: str = "persona_verbosity_0",
     sleep_time_system_block_filename: str = "sleep_time_base",
     sleep_time_model: Optional[str] = None,
     test_time_model: Optional[str] = None,
     test_time_temperature: float = 0,
     sleep_time_temperature: float = 0,
     ablate_question: bool = False,
-    cached_sleep_time_blocks_file: Optional[str] = None,
 ) -> None:
 
     test_time_llm_config = LlmConfig(model=test_time_model, model_endpoint_type="openai", model_endpoint="https://api.openai.com/v1", context_window=32_000, temperature=test_time_temperature)
@@ -84,7 +81,6 @@ async def run_memory_edits(
             new_memory = client.blocks.create(label="rethink_memory_block", value="[empty]", limit=5000)
             test_time_agent = client.agents.create(
                     name=f"{example_idx}_test_time_agent_{idx}",
-                    # agent_type=AgentType.memgpt_agent,
                     system=get_prompt_text(test_time_system_block_filename, "system"),
                     llm_config=test_time_llm_config,
                     embedding="openai/text-embedding-ada-002",
@@ -216,8 +212,8 @@ async def run_memory_edits(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_file", type=str, default="./GSM8K_p2.jsonl", required=False)
-    parser.add_argument("--output_file", default="./predictions-GSM8k_p2.jsonl", required=False)
+    parser.add_argument("--input_file", type=str, default="./data/stateful_gsm_symbolic_p2.jsonl", required=False)
+    parser.add_argument("--output_file", default="./data/predictions-stateful_gsm_symbolic_p2.jsonl", required=False)
     parser.add_argument("--test_time_model", default="gpt-4o-mini", required=False)
     parser.add_argument("--test_time_human_block_filename", default="human_verbosity_0", required=False)
     parser.add_argument("--test_time_persona_block_filename", default="persona_verbosity_0", required=False)
@@ -227,12 +223,6 @@ if __name__ == "__main__":
     parser.add_argument("--test_time_temperature", default=0, required=False, type=float)
     parser.add_argument("--sleep_time_temperature", default=0, required=False, type=float)
     parser.add_argument("--ablate_question", action="store_true")
-    parser.add_argument(
-        "--cached_sleep_time_blocks_file",
-        default=None,
-        required=False,
-        help="Use the cached sleep_time files for the offline agent from a previous run",
-    )
 
     args = parser.parse_args()
 
@@ -249,6 +239,5 @@ if __name__ == "__main__":
             test_time_temperature=args.test_time_temperature,
             sleep_time_temperature=args.sleep_time_temperature,
             ablate_question=args.ablate_question,
-            cached_sleep_time_blocks_file=args.cached_sleep_time_blocks_file,
         )
     )
