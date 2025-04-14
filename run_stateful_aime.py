@@ -66,7 +66,7 @@ async def run_memory_edits(
             model_endpoint_type="anthropic",
             model_endpoint="https://api.anthropic.com/v1",
             context_window=200_000,
-            # enable_reasoner=True,
+            enable_reasoner=True,
             max_reasoning_tokens=20_000,
             max_tokens=30_000,
         )
@@ -158,7 +158,7 @@ async def run_memory_edits(
                     return idx, response, updated_agent
 
                 def process_conversation_agent(idx, conversation_agent, question, client):
-                    response = client.agents.messages.create(agent_id=conversation_agent.id, messages=[MessageCreate(role="user", content=question)])
+                    response = client.agents.messages.create_stream(agent_id=conversation_agent.id, messages=[MessageCreate(role="user", content=question)], stream_tokens=True)
                     updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
                     return idx, response, updated_agent
 
@@ -198,10 +198,9 @@ async def run_memory_edits(
                         idx, response, updated_agent = future.result()
                         final_responses.append(response)
                         conversation_agents[idx] = updated_agent
-                
                 result = {
                     "question": example["stateful_aime_question"],
-                    "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
+                    # "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
                     "sleep_time_memory": [
                         client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
                     ],
@@ -214,7 +213,7 @@ async def run_memory_edits(
                         for conversation_agent in conversation_agents
                     ],
                     "answer": example["answer"],
-                    "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
+                    # "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
                 }
                 break
             except Exception as e:
