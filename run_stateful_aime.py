@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 import uuid
 import base64
+import time
 
 import jsonlines
 from tqdm import tqdm
@@ -69,6 +70,7 @@ async def run_memory_edits(
             enable_reasoner=True,
             max_reasoning_tokens=20_000,
             max_tokens=30_000,
+            put_inner_thoughts_in_kwargs=False,
         )
     elif model == 'o3-mini' or model == 'o1':
         LLM_CONFIG = LlmConfig(
@@ -114,6 +116,7 @@ async def run_memory_edits(
                             initial_message_sequence=[],
                         )
                         conversation_agents.append(conversation_agent)
+                    time.sleep(1) # Postgres may generate duplicate message IDs when we create agents too fast
 
                     sleep_time_human_block = client.blocks.create(
                         label="human",
@@ -200,7 +203,7 @@ async def run_memory_edits(
                         conversation_agents[idx] = updated_agent
                 result = {
                     "question": example["stateful_aime_question"],
-                    # "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
+                    "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
                     "sleep_time_memory": [
                         client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
                     ],
@@ -213,7 +216,7 @@ async def run_memory_edits(
                         for conversation_agent in conversation_agents
                     ],
                     "answer": example["answer"],
-                    # "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
+                    "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
                 }
                 break
             except Exception as e:
