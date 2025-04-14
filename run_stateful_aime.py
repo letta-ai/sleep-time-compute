@@ -67,7 +67,8 @@ async def run_memory_edits(
             model_endpoint="https://api.anthropic.com/v1",
             context_window=200_000,
             # enable_reasoner=True,
-            # max_reasoning_tokens=4096,
+            max_reasoning_tokens=20_000,
+            max_tokens=30_000,
         )
     elif model == 'o3-mini' or model == 'o1':
         LLM_CONFIG = LlmConfig(
@@ -152,7 +153,7 @@ async def run_memory_edits(
                 sleep_time_responses = []
 
                 def process_sleep_time_agent(idx, sleep_time_agent, context, client):
-                    response = client.agents.messages.create(agent_id=sleep_time_agent.id, messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)])
+                    response = client.agents.messages.create_stream(agent_id=sleep_time_agent.id, messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], stream_tokens=True)
                     updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
                     return idx, response, updated_agent
 
