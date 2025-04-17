@@ -18,7 +18,13 @@ import jsonlines
 from tqdm import tqdm
 import datasets
 
-from letta_client import Letta, LlmConfig, MessageCreate
+from letta_client import Letta, LlmConfig, MessageCreate, LettaUsageStatistics
+
+def consume_stream_generator(stream_generator):
+    response_content = ""
+    for chunk in stream_generator:
+        print(chunk)
+    return response_content
 
 def finish_rethinking_memory(agent_state: "AgentState") -> Optional[str]:  # type: ignore
     """
@@ -156,12 +162,24 @@ async def run_memory_edits(
                 sleep_time_responses = []
 
                 def process_sleep_time_agent(idx, sleep_time_agent, context, client):
-                    response = client.agents.messages.create_stream(agent_id=sleep_time_agent.id, messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], stream_tokens=True)
+                    response_generator = client.agents.messages.create_stream(
+                        agent_id=sleep_time_agent.id, 
+                        messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], 
+                        stream_tokens=True
+                    )
+                    # response_content = consume_stream_generator(response_generator)
+                    for chunk in response_generator:
+                        print(chunk)
                     updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
-                    return idx, response, updated_agent
+                    return idx, None, updated_agent
 
                 def process_conversation_agent(idx, conversation_agent, question, client):
-                    response = client.agents.messages.create_stream(agent_id=conversation_agent.id, messages=[MessageCreate(role="user", content=question)], stream_tokens=True)
+                    response_generator = client.agents.messages.create_stream(
+                        agent_id=conversation_agent.id, 
+                        messages=[MessageCreate(role="user", content=question)], 
+                        stream_tokens=True
+                    )
+                    response_content = consume_stream_generator(response_generator)
                     updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
                     return idx, response, updated_agent
 
@@ -184,6 +202,8 @@ async def run_memory_edits(
                         sleep_time_memory_agents[idx] = updated_agent
                 # Process conversation agents in parallel
                 final_responses = []
+                # block here, make sure we have all the sleep_time memory
+                sleep_time_memory_agents = [client.agents.retrieve(agent_id=agent.id) for agent in sleep_time_memory_agents]
                 with ThreadPoolExecutor() as executor:
                     final_message = example["stateful_aime_context"] + " " + example["stateful_aime_question"]
 
@@ -201,6 +221,14 @@ async def run_memory_edits(
                         idx, response, updated_agent = future.result()
                         final_responses.append(response)
                         conversation_agents[idx] = updated_agent
+                conversation_agents = [client.agents.retrieve(agent_id=agent.id) for agent in conversation_agents]
+                # get all messages from the convo agent
+                conversation_messages = [client.agents.messages.list(agent_id=agent.id) for agent in conversation_agents]
+                print("Conversation messages:", conversation_messages)
+                # get all messages from the sleep_time agent
+                sleep_time_messages = [client.agents.messages.list(agent_id=agent.id) for agent in sleep_time_memory_agents]
+                print("Sleep time messages:", sleep_time_messages)
+
                 result = {
                     "question": example["stateful_aime_question"],
                     "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
