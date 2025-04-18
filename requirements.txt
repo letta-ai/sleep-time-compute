@@ -1,3 +1,4 @@
 datasets
 jsonlines
 tqdm
+letta-client

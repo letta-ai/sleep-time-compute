@@ -26,10 +26,10 @@ docker run \
 ## Reference
 If you find this helpful, please consider citing:
 ```bibtex
-@article{lin2025sleep,
+@article{lin-snell-etal:2025:arxiv},
   title={Sleep-time Compute: Beyond Inference Scaling at Test-time},
   author={Lin, Kevin and Snell, Charlie, and Wang, Yu and Packer, Charles and Wooders, Sarah and Stoica, Ion, and Gonzalez, Joseph E.},
-  journal={arXiv preprint},
+  journal={arXiv:2504.13171},
   year={2025}
 }
 ```
