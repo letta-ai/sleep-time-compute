@@ -10,6 +10,7 @@ import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+import datasets
 
 import jsonlines
 from tqdm import tqdm
@@ -80,7 +81,7 @@ async def run_memory_edits(
 
             new_memory = client.blocks.create(label="rethink_memory_block", value="[empty]", limit=5000)
             test_time_agent = client.agents.create(
-                    name=f"{example_idx}_test_time_agent_{idx}",
+                    name=f"{example_idx}_test_time_agent",
                     system=get_prompt_text(test_time_system_block_filename, "system"),
                     llm_config=test_time_llm_config,
                     embedding="openai/text-embedding-ada-002",
@@ -99,7 +100,7 @@ async def run_memory_edits(
             finish_rethink_tool = client.tools.upsert_from_function(func=finish_rethinking_memory)
 
             sleep_time_memory_agent = client.agents.create(
-                name=f"{example_idx}_sleep_time_memory_agent_{idx}",
+                name=f"{example_idx}_sleep_time_memory_agent",
                 agent_type="sleeptime_agent",
                 system=get_prompt_text(sleep_time_system_block_filename, "system"),
                 memory_blocks=[
@@ -218,9 +219,9 @@ if __name__ == "__main__":
     parser.add_argument("--test_time_human_block_filename", default="human_verbosity_0", required=False)
     parser.add_argument("--test_time_persona_block_filename", default="persona_verbosity_0", required=False)
     parser.add_argument("--test_time_system_block_filename", default="convo_verbosity_0", required=False)
+    parser.add_argument("--test_time_temperature", default=0, required=False, type=float)
     parser.add_argument("--sleep_time_model", default="gpt-4o-mini", required=False)
     parser.add_argument("--sleep_time_system_block_filename", default="sleep_time_base", required=False)
-    parser.add_argument("--test_time_temperature", default=0, required=False, type=float)
     parser.add_argument("--sleep_time_temperature", default=0, required=False, type=float)
     parser.add_argument("--ablate_question", action="store_true")
 

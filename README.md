@@ -21,8 +21,32 @@ docker run \
   letta/letta:latest
 ```
 
-## Stateful GSM-Symbolic Experiments
+
 ## Stateful AIME Experiments  
+
+## Stateful GSM-Symbolic Experiments
+Download data
+```
+cd data
+wget https://huggingface.co/datasets/letta-ai/stateful-gsm-symbolic/resolve/main/stateful_gsm_symbolic_p1.jsonl
+wget https://huggingface.co/datasets/letta-ai/stateful-gsm-symbolic/resolve/main/stateful_gsm_symbolic_p2.jsonl
+cd ..
+```
+
+Run the script to generate predictions
+```
+python run_stateful_gsm_symbolic.py  \
+--input_file ./data/stateful_gsm_symbolic_p2.jsonl \
+--output_file ./predictions-stateful_gsm_symbolic_p2.jsonl  \
+--test_time_persona_block_filename persona_verbosity_2
+```
+
+Evaluate the results
+```
+python evaluate_gsm_symbolic.py  \
+  --input_file ./predictions-stateful_gsm_symbolic_p2.jsonl
+```
+
 ## Reference
 If you find this helpful, please consider citing:
 ```bibtex
