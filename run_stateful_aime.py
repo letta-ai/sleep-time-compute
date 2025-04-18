@@ -69,28 +69,7 @@ async def run_memory_edits(
     num_sleep_time_agents: int = 1,
     num_convo_agents: int = 1,
 ) -> None:
-    if "claude" in model:
-        CHAT_LLM_CONFIG = LlmConfig(
-            model=model,
-            model_endpoint_type="anthropic",
-            model_endpoint="https://api.anthropic.com/v1",
-            context_window=200_000,
-            enable_reasoner=True,
-            max_reasoning_tokens=chat_reasoning_effort,
-            max_tokens=64_000,
-            put_inner_thoughts_in_kwargs=False,
-        )
-        SLEEP_LLM_CONFIG = LlmConfig(
-            model=model,
-            model_endpoint_type="anthropic",
-            model_endpoint="https://api.anthropic.com/v1",
-            context_window=200_000,
-            enable_reasoner=True,
-            max_reasoning_tokens=sleep_time_reasoning_effort,
-            max_tokens=64_000,
-            put_inner_thoughts_in_kwargs=False,
-        )
-    elif model == 'o3-mini' or model == 'o1':
+    if model == 'o3-mini' or model == 'o1':
         CHAT_LLM_CONFIG = LlmConfig(
             model=model,
             model_endpoint_type="openai",
@@ -105,6 +84,7 @@ async def run_memory_edits(
             model_endpoint_type="openai",
             model_endpoint="https://api.openai.com/v1",
             context_window=200_000,
+            temperature=1.0,
             enable_reasoner=True,
             reasoning_effort=sleep_time_reasoning_effort,
         )
@@ -112,7 +92,7 @@ async def run_memory_edits(
         raise ValueError(f"Model {model} not supported")
     
     client = Letta()
-    examples = list(datasets.load_dataset("letta-ai/stateful-aime-2024")['train'])[:2]
+    examples = list(datasets.load_dataset("letta-ai/stateful-aime-2024")['train'])
     progress = tqdm(total=len(examples))
 
     uuid_bytes = uuid.uuid4().bytes
@@ -186,29 +166,33 @@ async def run_memory_edits(
                 sleep_time_responses = []
 
                 def process_sleep_time_agent(idx, sleep_time_agent, context, client):
-                    response_generator = client.agents.messages.create_stream(
-                        agent_id=sleep_time_agent.id, 
-                        messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], 
-                        stream_tokens=True
-                    )
-                    _ = consume_stream_generator(response_generator)
-                    updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
-
-                    messages = client.agents.messages.list(agent_id=sleep_time_agent.id)
-                    return idx, messages, updated_agent
+                    if model == 'o3-mini' or model == 'o1':
+                        response = client.agents.messages.create(
+                            agent_id=sleep_time_agent.id, 
+                            messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], 
+                        )
+                        updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
+                        messages = client.agents.messages.list(agent_id=sleep_time_agent.id)
+                        usage = response.usage
+                    else:
+                        raise ValueError(f"Model {model} not supported")
+                    return idx, messages, updated_agent, usage
 
                 def process_conversation_agent(idx, conversation_agent, question, client):
-                    response_generator = client.agents.messages.create_stream(
-                        agent_id=conversation_agent.id, 
-                        messages=[MessageCreate(role="user", content=question)], 
-                        stream_tokens=True
-                    )
-                    _ = consume_stream_generator(response_generator)
-                    updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
-                    # retrieve messages from the agent
-                    messages = client.agents.messages.list(agent_id=conversation_agent.id)
-                    return idx, messages, updated_agent
+                    if model == 'o3-mini' or model == 'o1':
+                        response = client.agents.messages.create(
+                            agent_id=conversation_agent.id, 
+                            messages=[MessageCreate(role="user", content=question)], 
+                        )
+                        updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
+                        messages = client.agents.messages.list(agent_id=conversation_agent.id)
+                        usage = response.usage
+                    else:
+                        raise ValueError(f"Model {model} not supported")
+                        
+                    return idx, messages, updated_agent, usage
 
+                sleep_time_usage_list = []
                 # Process sleep_time agents in parallel
                 with ThreadPoolExecutor() as executor:
                     futures = [
@@ -222,11 +206,13 @@ async def run_memory_edits(
                         for idx, sleep_time_agent in enumerate(sleep_time_memory_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(sleep_time_memory_agents)):
-                        idx, messages, updated_agent = future.result()
+                        idx, messages, updated_agent, usage = future.result()
                         sleep_time_responses.append(messages)
                         sleep_time_memory_agents[idx] = updated_agent
+                        sleep_time_usage_list.append(usage)
                 # Process conversation agents in parallel
                 final_responses = []
+                conversation_usage_list = []
                 # block here, make sure we have all the sleep_time memory
                 with ThreadPoolExecutor() as executor:
                     final_message = example["stateful_aime_context"] + " " + example["stateful_aime_question"]
@@ -242,9 +228,10 @@ async def run_memory_edits(
                         for idx, conversation_agent in enumerate(conversation_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(conversation_agents)):
-                        idx, messages, updated_agent = future.result()
+                        idx, messages, updated_agent, usage = future.result()
                         final_responses.append(messages)
                         conversation_agents[idx] = updated_agent
+                        conversation_usage_list.append(usage)
                 conversation_agents = [client.agents.retrieve(agent_id=agent.id) for agent in conversation_agents]
                 # get all messages from the convo agent
                 conversation_messages = [client.agents.messages.list(agent_id=agent.id) for agent in conversation_agents]
@@ -269,6 +256,8 @@ async def run_memory_edits(
                     ],
                     "answer": example["answer"],
                     "sleep_time_responses": [[message.model_dump(exclude_none=True, mode="json") for message in messages] for messages in sleep_time_responses],
+                    "sleep_time_usage_list": [item.model_dump(exclude_none=True, mode="json") for item in sleep_time_usage_list],
+                    "conversation_usage_list": [item.model_dump(exclude_none=True, mode="json") for item in conversation_usage_list],
                 }
                 break
             except Exception as e:
@@ -276,8 +265,8 @@ async def run_memory_edits(
                 print(e)
                 result = None
                 retry_id += 1
-                raise e # TODO: remove this line to allow retries
-
+                time.sleep(2)
+        
         progress.update(1)
         return result
 

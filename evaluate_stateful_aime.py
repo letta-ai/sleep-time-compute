@@ -54,11 +54,11 @@ def grade_answer(predicted_answer, actual_answer):
         return False
     return predicted_answer == actual_answer
 
-def get_data_for_run(data, idx=1):
-    grades, offline_tokens, chat_tokens = [], [], []
+def get_data_for_run(data, idx=-1):
+    grades, sleep_tokens, chat_tokens = [], [], []
     for item in data:
         try:
-            pred_ans = parse_answer(item["responses"][0]["messages"][idx]["content"])
+            pred_ans = parse_answer(item["responses"][0][idx]["content"])
         except:
             print("failed to parse answer")
             pred_ans = ""
@@ -66,18 +66,18 @@ def get_data_for_run(data, idx=1):
         grade = grade_answer(pred_ans, gt_ans)
         grades.append(grade)
         if len(item["responses"]) > 0:
-            chat_tokens.append(item["responses"][0]["usage"]["completion_tokens"])
+            chat_tokens.append(item["conversation_usage_list"][0]["completion_tokens"])
             if "sleep_time_responses" in item:
-                offline_tokens.append(item["sleep_time_responses"][0]["usage"]["completion_tokens"])
+                sleep_tokens.append(item["sleep_time_usage_list"][0]["completion_tokens"])
             else:
-                offline_tokens.append(0)
+                sleep_tokens.append(0)
         else:
             chat_tokens.append(0)
-            offline_tokens.append(0)
+            sleep_tokens.append(0)
     return {
         "accuracy": sum(grades) / len(grades),
         "test_time_avg_tokens": sum(chat_tokens) / len(chat_tokens),
-        "sleep_time_avg_tokens": sum(offline_tokens) / len(offline_tokens),
+        "sleep_time_avg_tokens": sum(sleep_tokens) / len(sleep_tokens),
         "num_examples": len(data),
     }
 
