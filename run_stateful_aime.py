@@ -9,7 +9,7 @@ Example:
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Optional, Union
 import uuid
 import base64
 import time
@@ -64,31 +64,55 @@ async def run_memory_edits(
     system_block_filename: str = "convo_verbosity_0",
     sleep_time_system_block_filename: str = "sleep_time_base_aime",
     model: str = "o3-mini",
+    chat_reasoning_effort: Union[str, int] = "medium",
+    sleep_time_reasoning_effort: Union[str, int] = "high",
     num_sleep_time_agents: int = 1,
     num_convo_agents: int = 1,
 ) -> None:
     if "claude" in model:
-        LLM_CONFIG = LlmConfig(
+        CHAT_LLM_CONFIG = LlmConfig(
             model=model,
             model_endpoint_type="anthropic",
             model_endpoint="https://api.anthropic.com/v1",
             context_window=200_000,
             enable_reasoner=True,
-            max_reasoning_tokens=20_000,
-            max_tokens=30_000,
+            max_reasoning_tokens=chat_reasoning_effort,
+            max_tokens=64_000,
+            put_inner_thoughts_in_kwargs=False,
+        )
+        SLEEP_LLM_CONFIG = LlmConfig(
+            model=model,
+            model_endpoint_type="anthropic",
+            model_endpoint="https://api.anthropic.com/v1",
+            context_window=200_000,
+            enable_reasoner=True,
+            max_reasoning_tokens=sleep_time_reasoning_effort,
+            max_tokens=64_000,
             put_inner_thoughts_in_kwargs=False,
         )
     elif model == 'o3-mini' or model == 'o1':
-        LLM_CONFIG = LlmConfig(
+        CHAT_LLM_CONFIG = LlmConfig(
             model=model,
             model_endpoint_type="openai",
             model_endpoint="https://api.openai.com/v1",
             context_window=200_000,
             temperature=1.0,
+            enable_reasoner=True,
+            reasoning_effort=chat_reasoning_effort,
         )
-
+        SLEEP_LLM_CONFIG = LlmConfig(
+            model=model,
+            model_endpoint_type="openai",
+            model_endpoint="https://api.openai.com/v1",
+            context_window=200_000,
+            enable_reasoner=True,
+            reasoning_effort=sleep_time_reasoning_effort,
+        )
+    else:
+        raise ValueError(f"Model {model} not supported")
+    
     client = Letta()
-    examples = list(datasets.load_dataset("letta-ai/stateful-aime-2024")['train'])
+    examples = list(datasets.load_dataset("letta-ai/stateful-aime-2024")['train'])[:2]
     progress = tqdm(total=len(examples))
 
     uuid_bytes = uuid.uuid4().bytes
@@ -111,7 +135,7 @@ async def run_memory_edits(
                         conversation_agent = client.agents.create(
                             name=f"{example_idx}_conversation_agent_{idx}_{run_uuid}_{retry_id}",
                             system=get_prompt_text(system_block_filename, "system"),
-                            llm_config=LLM_CONFIG,
+                            llm_config=CHAT_LLM_CONFIG,
                             embedding="openai/text-embedding-ada-002",
                             tools=["send_message"],
                             memory_blocks=[
@@ -150,7 +174,7 @@ async def run_memory_edits(
                     I use the rethink memory to store all my questions, calcuations, and inferences. I am verbose and brainstorm using the rethink block many different types of potential questions and the reasoning required for answering them. I keep calling rethink_memory until I have all the potential inferences and calcuations, and check that there are no errors or extra information that would not be helpful for answering the kinds of questions in the `examples` block."""}
                         ],
                         block_ids=[new_memory.id],
-                        llm_config=LLM_CONFIG,
+                        llm_config=SLEEP_LLM_CONFIG,
                         embedding="openai/text-embedding-ada-002",
                         tool_ids=[rethink_tool.id, finish_rethink_tool.id],
                         include_base_tools=False,
@@ -283,6 +307,8 @@ if __name__ == "__main__":
     parser.add_argument("--system_block_filename", default="convo_verbosity_0", required=False)
     parser.add_argument("--sleep_time_system_block_filename", default="sleep_time_base_aime", required=False)
     parser.add_argument("--model", default="o3-mini", required=False)
+    parser.add_argument("--chat_reasoning_effort", default="medium", required=False)
+    parser.add_argument("--sleep_time_reasoning_effort", default="high", required=False)
     parser.add_argument("--num_sleep_time_agents", default=1, required=False, type=int)
     parser.add_argument("--num_convo_agents", default=1, required=False, type=int, help="This should either be 1 or num_sleep_time_agents")
 
@@ -296,6 +322,8 @@ if __name__ == "__main__":
             args.system_block_filename,
             args.sleep_time_system_block_filename,
             args.model,
+            args.chat_reasoning_effort,
+            args.sleep_time_reasoning_effort,
             args.num_sleep_time_agents,
             args.num_convo_agents,
         )
