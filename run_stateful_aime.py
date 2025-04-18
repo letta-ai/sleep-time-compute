@@ -21,10 +21,10 @@ import datasets
 from letta_client import Letta, LlmConfig, MessageCreate, LettaUsageStatistics
 
 def consume_stream_generator(stream_generator):
-    response_content = ""
+    chunks = []
     for chunk in stream_generator:
-        print(chunk)
-    return response_content
+        chunks.append(chunk)
+    return chunks
 
 def finish_rethinking_memory(agent_state: "AgentState") -> Optional[str]:  # type: ignore
     """
@@ -167,11 +167,11 @@ async def run_memory_edits(
                         messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], 
                         stream_tokens=True
                     )
-                    # response_content = consume_stream_generator(response_generator)
-                    for chunk in response_generator:
-                        print(chunk)
+                    _ = consume_stream_generator(response_generator)
                     updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
-                    return idx, None, updated_agent
+
+                    messages = client.agents.messages.list(agent_id=sleep_time_agent.id)
+                    return idx, messages, updated_agent
 
                 def process_conversation_agent(idx, conversation_agent, question, client):
                     response_generator = client.agents.messages.create_stream(
@@ -179,9 +179,11 @@ async def run_memory_edits(
                         messages=[MessageCreate(role="user", content=question)], 
                         stream_tokens=True
                     )
-                    response_content = consume_stream_generator(response_generator)
+                    _ = consume_stream_generator(response_generator)
                     updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
-                    return idx, response, updated_agent
+                    # retrieve messages from the agent
+                    messages = client.agents.messages.list(agent_id=conversation_agent.id)
+                    return idx, messages, updated_agent
 
                 # Process sleep_time agents in parallel
                 with ThreadPoolExecutor() as executor:
@@ -196,14 +198,12 @@ async def run_memory_edits(
                         for idx, sleep_time_agent in enumerate(sleep_time_memory_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(sleep_time_memory_agents)):
-                        idx, response, updated_agent = future.result()
-                        print("RESPONSE", response)
-                        sleep_time_responses.append(response)
+                        idx, messages, updated_agent = future.result()
+                        sleep_time_responses.append(messages)
                         sleep_time_memory_agents[idx] = updated_agent
                 # Process conversation agents in parallel
                 final_responses = []
                 # block here, make sure we have all the sleep_time memory
-                sleep_time_memory_agents = [client.agents.retrieve(agent_id=agent.id) for agent in sleep_time_memory_agents]
                 with ThreadPoolExecutor() as executor:
                     final_message = example["stateful_aime_context"] + " " + example["stateful_aime_question"]
 
@@ -218,8 +218,8 @@ async def run_memory_edits(
                         for idx, conversation_agent in enumerate(conversation_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(conversation_agents)):
-                        idx, response, updated_agent = future.result()
-                        final_responses.append(response)
+                        idx, messages, updated_agent = future.result()
+                        final_responses.append(messages)
                         conversation_agents[idx] = updated_agent
                 conversation_agents = [client.agents.retrieve(agent_id=agent.id) for agent in conversation_agents]
                 # get all messages from the convo agent
@@ -231,7 +231,7 @@ async def run_memory_edits(
 
                 result = {
                     "question": example["stateful_aime_question"],
-                    "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
+                    "responses": [[message.model_dump(exclude_none=True, mode="json") for message in messages] for messages in final_responses],
                     "sleep_time_memory": [
                         client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
                     ],
@@ -244,7 +244,7 @@ async def run_memory_edits(
                         for conversation_agent in conversation_agents
                     ],
                     "answer": example["answer"],
-                    "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
+                    "sleep_time_responses": [[message.model_dump(exclude_none=True, mode="json") for message in messages] for messages in sleep_time_responses],
                 }
                 break
             except Exception as e:
