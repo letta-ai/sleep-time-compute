@@ -12,12 +12,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 import uuid
 import base64
+import time
 
 import jsonlines
 from tqdm import tqdm
 import datasets
 
-from letta_client import Letta, LlmConfig, MessageCreate
+from letta_client import Letta, LlmConfig, MessageCreate, LettaUsageStatistics
+
+def consume_stream_generator(stream_generator):
+    chunks = []
+    for chunk in stream_generator:
+        chunks.append(chunk)
+    return chunks
 
 def finish_rethinking_memory(agent_state: "AgentState") -> Optional[str]:  # type: ignore
     """
@@ -66,8 +73,10 @@ async def run_memory_edits(
             model_endpoint_type="anthropic",
             model_endpoint="https://api.anthropic.com/v1",
             context_window=200_000,
-            # enable_reasoner=True,
-            # max_reasoning_tokens=4096,
+            enable_reasoner=True,
+            max_reasoning_tokens=20_000,
+            max_tokens=30_000,
+            put_inner_thoughts_in_kwargs=False,
         )
     elif model == 'o3-mini' or model == 'o1':
         LLM_CONFIG = LlmConfig(
@@ -113,6 +122,7 @@ async def run_memory_edits(
                             initial_message_sequence=[],
                         )
                         conversation_agents.append(conversation_agent)
+                    time.sleep(1) # Postgres may generate duplicate message IDs when we create agents too fast
 
                     sleep_time_human_block = client.blocks.create(
                         label="human",
@@ -152,14 +162,28 @@ async def run_memory_edits(
                 sleep_time_responses = []
 
                 def process_sleep_time_agent(idx, sleep_time_agent, context, client):
-                    response = client.agents.messages.create(agent_id=sleep_time_agent.id, messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)])
+                    response_generator = client.agents.messages.create_stream(
+                        agent_id=sleep_time_agent.id, 
+                        messages=[MessageCreate(role="user", content="[trigger_rethink_memory] New situation:" + context)], 
+                        stream_tokens=True
+                    )
+                    _ = consume_stream_generator(response_generator)
                     updated_agent = client.agents.retrieve(agent_id=sleep_time_agent.id)
-                    return idx, response, updated_agent
+
+                    messages = client.agents.messages.list(agent_id=sleep_time_agent.id)
+                    return idx, messages, updated_agent
 
                 def process_conversation_agent(idx, conversation_agent, question, client):
-                    response = client.agents.messages.create(agent_id=conversation_agent.id, messages=[MessageCreate(role="user", content=question)])
+                    response_generator = client.agents.messages.create_stream(
+                        agent_id=conversation_agent.id, 
+                        messages=[MessageCreate(role="user", content=question)], 
+                        stream_tokens=True
+                    )
+                    _ = consume_stream_generator(response_generator)
                     updated_agent = client.agents.retrieve(agent_id=conversation_agent.id)
-                    return idx, response, updated_agent
+                    # retrieve messages from the agent
+                    messages = client.agents.messages.list(agent_id=conversation_agent.id)
+                    return idx, messages, updated_agent
 
                 # Process sleep_time agents in parallel
                 with ThreadPoolExecutor() as executor:
@@ -174,12 +198,12 @@ async def run_memory_edits(
                         for idx, sleep_time_agent in enumerate(sleep_time_memory_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(sleep_time_memory_agents)):
-                        idx, response, updated_agent = future.result()
-                        print("RESPONSE", response)
-                        sleep_time_responses.append(response)
+                        idx, messages, updated_agent = future.result()
+                        sleep_time_responses.append(messages)
                         sleep_time_memory_agents[idx] = updated_agent
                 # Process conversation agents in parallel
                 final_responses = []
+                # block here, make sure we have all the sleep_time memory
                 with ThreadPoolExecutor() as executor:
                     final_message = example["stateful_aime_context"] + " " + example["stateful_aime_question"]
 
@@ -194,13 +218,20 @@ async def run_memory_edits(
                         for idx, conversation_agent in enumerate(conversation_agents)
                     ]
                     for future in tqdm(as_completed(futures), total=len(conversation_agents)):
-                        idx, response, updated_agent = future.result()
-                        final_responses.append(response)
+                        idx, messages, updated_agent = future.result()
+                        final_responses.append(messages)
                         conversation_agents[idx] = updated_agent
-                
+                conversation_agents = [client.agents.retrieve(agent_id=agent.id) for agent in conversation_agents]
+                # get all messages from the convo agent
+                conversation_messages = [client.agents.messages.list(agent_id=agent.id) for agent in conversation_agents]
+                print("Conversation messages:", conversation_messages)
+                # get all messages from the sleep_time agent
+                sleep_time_messages = [client.agents.messages.list(agent_id=agent.id) for agent in sleep_time_memory_agents]
+                print("Sleep time messages:", sleep_time_messages)
+
                 result = {
                     "question": example["stateful_aime_question"],
-                    "responses": [final_response.model_dump(exclude_none=True, mode="json") for final_response in final_responses],  # "final_response.model_dump(),
+                    "responses": [[message.model_dump(exclude_none=True, mode="json") for message in messages] for messages in final_responses],
                     "sleep_time_memory": [
                         client.agents.blocks.retrieve(sleep_time_memory_agent.id, "rethink_memory_block").value for sleep_time_memory_agent in sleep_time_memory_agents
                     ],
@@ -213,7 +244,7 @@ async def run_memory_edits(
                         for conversation_agent in conversation_agents
                     ],
                     "answer": example["answer"],
-                    "sleep_time_responses": [sleep_time_response.model_dump(exclude_none=True, mode="json") for sleep_time_response in sleep_time_responses],
+                    "sleep_time_responses": [[message.model_dump(exclude_none=True, mode="json") for message in messages] for messages in sleep_time_responses],
                 }
                 break
             except Exception as e:
