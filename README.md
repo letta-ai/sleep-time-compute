@@ -1,5 +1,15 @@
-# sleep-time-compute
-Code and data accompanying the paper [Sleep-time Compute: Beyond Inference Scaling at Test-time](https://arxiv.org/abs/2504.13171)
+# Sleep-time Compute (paper code)
+Code and data accompanying the paper [Sleep-time Compute: Beyond Inference Scaling at Test-time](https://arxiv.org/abs/2504.13171) from Letta and UC Berkeley.
+
+> [!NOTE]
+> This repo contains code to reproduce the emperical AIME/GSM results in the Sleep-time Compute **research paper**.
+> 
+> If you are interested in building agents that use sleep-time compute, view the official [sleep-time agents developer docs](https://docs.letta.com/guides/agents/sleep-time-agents).
+
+Useful links:
+* [arXiv paper](https://arxiv.org/abs/2504.13171)
+* [blog post](https://www.letta.com/blog/sleep-time-compute)
+* [sleep-time agent documentation](https://docs.letta.com/guides/agents/sleep-time-agents)
 
 ## Data
 
