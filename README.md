@@ -17,6 +17,7 @@ Stateful AIME 2025: https://huggingface.co/datasets/letta-ai/stateful-aime-2025
 
 Stateful GSM-Symbolic: https://huggingface.co/datasets/letta-ai/stateful-gsm-symbolic
 
+SWE-Features: https://huggingface.co/datasets/letta-ai/SWE-Features
 
 ## Setup
 ```
